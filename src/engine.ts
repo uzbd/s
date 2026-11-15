@@ -156,9 +156,24 @@ function decodeRun(seg: string): string {
   return chunks.map(c => strictWord(c) ?? decodeSeg(c)).join(" ");
 }
 
+// Release-style names ("Some.Movie.Name.2023.1080p.WEB-DL"): dots only separate words, so turn them into spaces.
+// Digits are kept, URLs/emails/file names with a known extension and version numbers like 1.2.3 are left alone.
+function undot(tok: string): string {
+  if (PROTECT.test(tok) || (tok.match(/\./g) ?? []).length < 2) return tok;
+  const m = tok.match(/^(\W*?)([A-Za-z0-9][\s\S]*?[A-Za-z0-9])(\W*)$/);
+  if (!m) return tok;
+  const core = m[2];
+  if (EXT.test(core) || !/^[A-Za-z0-9\-]+(?:\.+[A-Za-z0-9\-]+)+$/.test(core)) return tok;
+  const chunks = core.split(/\.+/);
+  const words = chunks.filter(c => /[A-Za-z]{2,}/.test(c));
+  if (chunks.length < 3 || words.length < 2) return tok;
+  return m[1] + chunks.join(" ") + m[3];
+}
+
 export function decodeLine(line: string): string {
-  const parts = normalize(line).split(/(\s+)/); // even index = token, odd index = whitespace
-  const kind = parts.map((p, i) => (i % 2 ? "sp" : classify(p)));
+  const raw = normalize(line).split(/(\s+)/); // even index = token, odd index = whitespace
+  const parts = raw.map((p, i) => (i % 2 ? p : undot(p)));
+  const kind = parts.map((p, i) => (i % 2 ? "sp" : p !== raw[i] ? "inert" : classify(p))); // already-split names are final
   const mark = new Array<boolean>(parts.length).fill(false);
   kind.forEach((k, i) => {
     if (k !== "bad") return;
